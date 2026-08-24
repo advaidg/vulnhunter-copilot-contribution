@@ -27,8 +27,10 @@ description: >
 >   numbered list in chat and wait for the user's reply before proceeding.
 >   Functionally the same pause-and-wait; loses the structured button UI.
 > - **Model check**: Opus/Sonnet/Haiku-specific gating and `/model
->   claude-opus-4-8` → recommend Auto model selection (or the strongest
->   reasoning-tier model available) instead of checking for one named model.
+>   claude-opus-4-8` → the same stop-and-confirm discipline, adapted to
+>   Copilot's model picker instead of a named Claude model, since Copilot
+>   doesn't expose one universal model name to gate on the way Claude Code
+>   does. Still requires a specific frontier-class model — not "Auto."
 > - **`${SKILL_DIR}`**: no Claude-Code-style automatic skill-directory
 >   variable exists in Copilot. Bind it explicitly in Step 0 (see below)
 >   instead of assuming it's provided.
@@ -163,7 +165,15 @@ later step in this file and in every prompt file it loads.
 
 The reasoning load in this skill — clustering findings by topic, the CANNOT_AUTO_FIX collaboration loop, fix synthesis when the report leaves gaps — needs frontier-class, multi-step reasoning. Lighter/faster models produce noticeably worse results: weaker clustering, hand-wavier fix proposals, more dead-end iterations in the loop.
 
-Check the model picker in Copilot Chat. Recommend **Auto** if it's available — it routes to the platform's current best-available reasoning model and fails over automatically. If Auto isn't available, ask the user to confirm they've selected the strongest reasoning-tier model their Copilot plan offers before proceeding; if they're on a lightweight/fast model, tell them so and ask them to switch in the model picker, then re-invoke `/vulnhunter-fix`.
+Matching the Claude Code version's discipline: check the model selected in
+the Copilot Chat model picker. If it is not a frontier-class reasoning
+model, **STOP.** Tell the user, verbatim: `This skill is calibrated for a
+frontier-class reasoning model. Please select your strongest available
+model in the Copilot Chat model picker, then re-invoke /vulnhunter-fix.` Do
+not run any other tool calls. Do not recommend "Auto" model selection as a
+substitute for this check — the underlying product deliberately requires a
+specific, named-tier model rather than delegating that choice to automatic
+routing, and this port keeps that same discipline.
 
 This is interactive-mode only. Headless mode invokes the executor with a fixed strong model under the hood and skips this gate.
 

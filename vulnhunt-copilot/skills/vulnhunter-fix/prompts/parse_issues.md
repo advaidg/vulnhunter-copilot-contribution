@@ -55,7 +55,7 @@ Then continue at **Step 5a** with `RESULTS_PATH` as the results directory. Skip 
 >    - **A lightweight/fast model** for shape-stable transforms over well-defined input (e.g., the Step 3(a) severity annotation: every issue body has the same `**Severity** | <val>` row format).
 >    - **A frontier reasoning model** for shape-variable transforms where the input layout drifts run-to-run (e.g., the Step 5a README extraction: rollup-subsumed findings, multi-CWE rows, varying detail-section field labels — lightweight models have dropped findings on real reports). Costs more per token but is order-of-magnitude more reliable when the input doesn't fit a single pattern.
 >
-> When in doubt between a lightweight and a frontier model for a subagent transform, **prefer the frontier one** — a missed finding or wrong field value silently propagates through the whole pipeline (re-runs, manual injections, lost work). The lightweight-model cost saving rarely pays for that. If your session is on Auto model selection, this distinction still matters for the *subagent* dispatch even though the main session routes itself.
+> When in doubt between a lightweight and a frontier model for a subagent transform, **prefer the frontier one** — a missed finding or wrong field value silently propagates through the whole pipeline (re-runs, manual injections, lost work). The lightweight-model cost saving rarely pays for that.
 >
 > Multi-line `jq` pipelines inside bash heredocs are a fourth option that **we don't use** — they keep biting us on shell quoting (`\!=`, `\\*\\*`, alternation order) and silently drop rows. Move that work up one tier.
 

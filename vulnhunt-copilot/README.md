@@ -157,7 +157,7 @@ copy (it rebuilds the venv too).
 
 1. Open the repository you want to scan/fix in VS Code.
 2. Open Copilot Chat, switch to **Agent** mode.
-3. Set the model picker to **Auto** if available — see the model note below.
+3. Select a frontier-class reasoning model in the model picker — see the model note below.
 4. Run one of:
    ```
    /vulnhunt              # scan the current repo
@@ -180,29 +180,34 @@ real PRs (or forks + PRs in fork mode). It needs `git` and the GitHub CLI
 **Tool boundary** section below for an important caveat on how that's
 enforced (or not) under Copilot.
 
-### Model selection: use Auto
+### Model selection: pick a frontier-class model, same as the Claude Code version
 
-GitHub Copilot's [Auto model selection](https://docs.github.com/copilot/concepts/auto-model-selection)
-routes each request to the platform's current best-available reasoning model
-based on task complexity, and fails over automatically if a specific model is
-degraded or unavailable — which is exactly the behavior these skills want
-across long, multi-phase, multi-subagent runs, without hard-pinning to one
-named model. Select **Auto** in the model picker before running any of these
-skills if your Copilot plan/org policy offers it. If Auto isn't available,
-pick the strongest reasoning-tier model you have access to — the discipline
-that keeps these skills reliable (falsification in `/vulnhunt`, clustering
-and fix synthesis in `/vulnhunter-fix`) depends on frontier-class, multi-step
-reasoning; all three were originally tuned against Claude Opus on the Claude
-Code side.
+The Claude Code version doesn't leave model choice to chance: it inspects
+its own model identity at start-up and stops if it isn't running on Opus.
+This port keeps that same discipline rather than softening it. Each skill's
+`SKILL.md` checks the model selected in the Copilot Chat model picker and
+stops, with an explicit message, if it isn't a frontier-class reasoning
+model — the falsification discipline (`/vulnhunt`), clustering and fix
+synthesis (`/vulnhunter-fix`) all depend on multi-step, adversarial
+reasoning that's unreliable on lighter/faster models.
 
-Subagents dispatched by any of the three skills inherit the parent session's
-model by default (VS Code's subagent model-priority order falls back to
-"parent conversation's model" when no explicit override is given) — none of
-these ports pin subagent models, so they get the same Auto routing.
+Deliberately **not** recommended here: GitHub Copilot's "Auto" model
+selection mode. Auto delegates the model choice to automatic,
+task-complexity-based routing — which is a reasonable default for general
+use, but it's a different philosophy than the one this product is built
+around. The underlying skill requires a specific, named-tier model and
+tells the user to switch if they aren't on one; this port mirrors that
+requirement rather than replacing it with "whatever the platform judges
+best for this request."
+
+Subagents dispatched by any of the three skills inherit the parent
+session's model by default (VS Code's subagent model-priority order falls
+back to "parent conversation's model" when no explicit override is given).
 `/vulnhunter-fix`'s `parse_issues.md` is the one exception worth knowing
 about: it explicitly asks for a frontier-tier subagent for one specific
-extraction step (README parsing) because lighter models have measurably
-dropped findings there — see that file's porting notes.
+extraction step (README parsing) regardless of the parent session's model,
+because lighter models have measurably dropped findings there — see that
+file's porting notes.
 
 ## Differences from the Claude Code version
 
@@ -220,7 +225,7 @@ Shared across all three ports:
 
 | Claude Code (`vulnhunt/`) | This port (`skills/vulnhunt/` overlay) |
 |---|---|
-| `SKILL.md` programmatically checks the running model and can tell the user to run `/model opus` mid-session. | Asks the user to select **Auto** (or a frontier model) in the Copilot model picker at start-up — can't switch it for them, but Auto's own failover reduces how much this matters. |
+| `SKILL.md` programmatically checks the running model and can tell the user to run `/model opus` mid-session. | Asks the user to confirm a frontier-class model is selected in the Copilot model picker at start-up, and stops with the same message-and-wait discipline if not — can't self-inspect or switch it for them the way Claude Code can, but doesn't relax the requirement either. |
 | "Agent-driven" invocation path, where `vulnhunter-agent/`'s headless runtime pre-resolves scan metadata. | Not ported — interactive, in-session metadata resolution only (Step 1 of `SKILL.md`). |
 
 `/vulnhunter-fix`-specific — the most consequential differences, since this skill pushes real commits and opens real PRs:
@@ -229,7 +234,7 @@ Shared across all three ports:
 |---|---|
 | `TaskCreate`/`TaskUpdate`/`TaskList` for mandatory task tracking. | VS Code's built-in todo-list tool (`todo_write`/`todo_read`) — confirmed to exist and serve the same purpose. |
 | `AskUserQuestion` for structured multi-choice prompts (mode disambiguation, cluster/issue selection, collaboration-loop options). | No confirmed Copilot equivalent. Ported as: present options as a numbered list in chat, ask the user to reply with the number(s) (comma-separated for multi-select), and wait. Functionally the same pause-and-wait; loses the structured button/checkbox UI. |
-| Opus/Sonnet/Haiku-specific model gating, incl. `/model claude-opus-4-8`. | Recommends Auto model selection (or the strongest available reasoning-tier model) instead of checking for one named model. Where the upstream skill deliberately routes specific subagent *tasks* to a cheaper vs. stronger model tier (e.g. Haiku for mechanical extraction, Sonnet for shape-variable extraction), this port keeps that tiering — generically, as "lightweight/fast model" vs. "frontier reasoning model" — since the underlying reasoning (cost vs. reliability trade-off) isn't Claude-specific. |
+| Opus/Sonnet/Haiku-specific model gating, incl. `/model claude-opus-4-8`. | Same stop-and-confirm discipline, adapted to Copilot's model picker instead of one named Claude model — still requires a specific frontier-class model, not "Auto." Where the upstream skill deliberately routes specific subagent *tasks* to a cheaper vs. stronger model tier (e.g. Haiku for mechanical extraction, Sonnet for shape-variable extraction), this port keeps that tiering — generically, as "lightweight/fast model" vs. "frontier reasoning model" — since the underlying reasoning (cost vs. reliability trade-off) isn't Claude-specific. |
 | An entire section of operational discipline for Claude Code's Bash tool's TLS/sandbox failure modes (manual hand-off to the user's own terminal, one command at a time). | Rewritten, not just relabeled: VS Code's terminal tool has its *own*, different sandboxing — confirmed to block network access by default with a **built-in retry-with-confirmation** flow, which the Claude Code Bash tool doesn't have. This port tries that retry first; the manual hand-off is now a fallback, not the first move. See `SKILL.md`'s **`git` + `gh` failure policy** section. |
 | `Co-Authored-By: Claude Code (VulnFix)` trailer on commits/PRs. | `Co-Authored-By: GitHub Copilot (VulnFix)` — fixed at the source, in the shared `vulnhunter-fix/templates/` and `prompts/worker_agent_common.md` — leaving the old attribution would have been factually wrong in real git history regardless of which platform produced the commit. |
 | `${SKILL_DIR}` resolved automatically by the platform. | No Copilot equivalent exists. Bound explicitly in `SKILL.md` Step 0 (derived from the path the agent read `SKILL.md` from, with a documented fallback default). |
@@ -289,8 +294,8 @@ and where it comes from instead.
   enabled. These are actively evolving Copilot/VS Code features — if
   dispatch or discovery doesn't behave as documented here, check your VS
   Code/Copilot Chat version against current docs first.
-- A frontier reasoning model available through your Copilot subscription
-  (ideally with Auto model selection enabled).
+- A frontier-class reasoning model available through your Copilot
+  subscription, selected explicitly in the model picker (not "Auto").
 - `/vulnhunt` and `/vulnhunt-fix-verify`: no Python, no network required for
   the skill itself. Terminal-enabled/non-read-only modes need your terminal
   tool available in the chat session.

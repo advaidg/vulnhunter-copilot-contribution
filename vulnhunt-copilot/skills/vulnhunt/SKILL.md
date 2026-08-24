@@ -21,10 +21,9 @@ description: >
 > - Uses Copilot's **Subagents** feature (the `agent`/`runSubagent` tool) to
 >   restore genuine **parallel** dispatch in Phase 2, instead of the
 >   sequential single-session emulation used previously.
-> - Recommends **Auto model selection** rather than pinning or manually
->   checking for one named model, so the audit always runs on whatever the
->   platform currently judges the best available reasoning model, with
->   automatic failover if a specific model is degraded or unavailable.
+> - Keeps the same model discipline as the Claude Code version: check for a
+>   frontier-class reasoning model at start-up and stop if one isn't
+>   selected, rather than delegating that choice to automatic model routing.
 >
 > Residual gap: if your Copilot Chat session doesn't have the subagent
 > (`agent`) tool available — older client, or disabled by org policy — Phase
@@ -55,17 +54,23 @@ workspace you're scanning.
 
 ## MANDATORY FIRST ACTIONS
 
-**Step 0: Model check.** Check the model picker in Copilot Chat. Recommend
-**Auto** if it's available in this environment — it routes each step to the
-platform's current best-available reasoning model and fails over
-automatically if a model is degraded or unavailable, which is what this audit
-wants throughout a long multi-phase run. If Auto isn't available (org policy,
-older client), ask the user to pick a frontier reasoning model manually
-(e.g. Claude Sonnet, GPT-5.1-Codex-Max, or whatever their Copilot plan's
-strongest reasoning-tier model is) — this methodology depends on multi-step,
-adversarial reasoning and is unreliable on lightweight/fast models. Confirm
-with the user before proceeding; don't resolve the target or run any tools
-until they've confirmed.
+**Step 0: Model check.** Matching the Claude Code version's discipline: check
+the model selected in the Copilot Chat model picker. If it is not a
+frontier-class reasoning model (e.g. Claude Opus/Sonnet via Copilot, or
+whatever your plan's strongest reasoning-tier model is), **STOP immediately**
+and tell the user (do not run any tools, resolve the target, or offer the
+mode menu yet):
+
+> ⚠️ VulnHunter is optimized for frontier-class reasoning models and may be
+> unreliable on lighter/faster ones. Please switch to your strongest available
+> model in the Copilot Chat model picker, then re-run `/vulnhunt`.
+
+Wait for the user. Only proceed past this step once they are on a frontier
+model, or if they explicitly reply that they want to continue on the current
+model anyway. Do not recommend "Auto" model selection as a substitute for
+this check — the underlying product deliberately requires a specific,
+named-tier model rather than delegating that choice to automatic routing,
+and this port keeps that same discipline rather than softening it.
 
 **Step 1: Resolve target, mode, and metadata.**
 - **Target:** the current workspace folder, unless the invocation names a
