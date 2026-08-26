@@ -65,30 +65,12 @@ own base tree — the install scripts copy it in directly from
 `vulnhunter-agent/verify_disposition.schema.json`, its actual canonical
 location, rather than storing a third copy here.
 
-**`vulnhunter-fix`** — overlay has `SKILL.md`, 6 of 17 prompt files
-(`parse_issues.md`, `deliver.md`, `implement.md`, `verify.md`, `parse.md`,
-`worker_agent_common.md`), and 8 files with small, deliberate deltas inside
-otherwise-shared directories: `scripts/cluster_score.py`,
-`scripts/validate_findings_draft.py` (comment wording only — no logic
-changes), `templates/pr_body.md`, `templates/pr_body_cluster.md`,
-`templates/commit_msg.md` (the `Co-Authored-By` trailer says `GitHub
-Copilot` instead of `Claude Code` — this one has a real behavioral
-consequence, since it lands in actual git history), `tests/test_graph_build_bugs.py`,
-`vulnhunter_fix/graph/build.py`, `vulnhunter_fix/graph/config.py` (a few
-comments generalized from "the Claude Code sandbox" to "macOS agent
-sandboxes," since VS Code Copilot's terminal tool sandboxes similarly — no
-logic changes). Everything else — the remaining `scripts/`, all of
-`references/`, the remaining `tests/`, the rest of the `vulnhunter_fix/`
-package, `config.json`, `collaborators.json`, `pyproject.toml`, `evals/`,
-and the other 11 prompt files — is byte-identical to `vulnhunter-fix/` and
-is never duplicated in this repo.
-
-Note that even the 8 delta files above only override *specific files*
-inside directories that are otherwise fully shared — the overlay does not
-need (and doesn't have) a complete parallel `scripts/`/`tests/`/`vulnhunter_fix/`
-tree; the install scripts merge base and overlay at the file level, not the
-directory level, so a directory can be mostly-base with a handful of
-overlay files inside it.
+**`vulnhunter-fix`** — overlay has exactly two files: `SKILL.md` and
+`prompts/parse_issues.md`. Everything else in `vulnhunter-fix/` — all 16
+other prompt files, `scripts/`, `references/`, `templates/`, `tests/`, the
+entire `vulnhunter_fix/` Python package, `config.json`, `collaborators.json`,
+`pyproject.toml`, `evals/` — is byte-identical to base and is never
+duplicated in this repo.
 
 **If you're changing shared methodology** (anything in the base
 directories) and the Copilot behavior needs to diverge as a result, add an
@@ -96,6 +78,48 @@ override file here at the matching relative path — the overlay always wins
 on conflict during install. If your change doesn't need Copilot-specific
 handling, you don't need to touch this directory at all; the install
 scripts will pick up your base-directory change automatically.
+
+### Small wording differences: install-time text substitution, not files
+
+A handful of base files need a one-line or few-line change that's purely
+about which platform is running — a `Co-Authored-By` attribution trailer,
+a couple of comments mentioning a Claude Code-specific tool by name. An
+earlier revision of this port kept full-file overlay copies for these too,
+but a [reviewer on the upstream PR](https://github.com/capitalone/VulnHunter/pull/32)
+pointed out that this was actually worse than it looked: those "delta"
+files were ~93% verbatim duplicates of base, and duplicating a whole file
+to change one line recreates the exact drift risk the overlay design exists
+to avoid — a future fix to the base file wouldn't reach Copilot users
+unless someone remembered the near-identical copy existed too.
+
+Instead, `vulnhunt-copilot/scripts/apply_substitutions.py` applies a small,
+explicit, byte-exact substitution list to the relevant base files, after
+they're copied to the install destination. Every rule:
+- Was generated from a real diff, not retyped by hand (see the script's
+  git history for the generation approach), so there's no risk of a
+  transcription mismatch.
+- **Fails loudly** if its expected text isn't found in the target file (or
+  is found an unexpected number of times) — if upstream changes that
+  wording, the install stops with a clear error naming the file and rule,
+  rather than silently leaving stale "Claude Code" wording in a Copilot
+  install. Verified directly: the script was run against a deliberately
+  modified copy of a target file during development and confirmed to fail
+  with the expected error, not silently succeed.
+- Was verified byte-for-byte against the full-file overlay copies it
+  replaced before those copies were deleted, so this is a mechanical
+  restructuring of the same content, not a re-authoring of it.
+
+This covers the `Co-Authored-By` trailer (in `templates/pr_body.md`,
+`templates/pr_body_cluster.md`, `templates/commit_msg.md`, and
+`prompts/{worker_agent_common,implement}.md`), a few `AskUserQuestion` →
+neutral-phrasing wording changes in `prompts/{implement,verify}.md` and
+`scripts/cluster_score.py`, a `Sonnet` → generic model-tier wording change
+in `prompts/verify.md`, `prompts/parse.md`, and
+`scripts/validate_findings_draft.py`, and "the Claude Code sandbox" →
+"macOS agent sandboxes" comment generalizations in
+`tests/test_graph_build_bugs.py` and `vulnhunter_fix/graph/{build,config}.py`.
+None of these touch executable logic — every changed line is a comment,
+docstring, or piece of prose.
 
 ## Install
 
@@ -236,9 +260,9 @@ Shared across all three ports:
 | `AskUserQuestion` for structured multi-choice prompts (mode disambiguation, cluster/issue selection, collaboration-loop options). | No confirmed Copilot equivalent. Ported as: present options as a numbered list in chat, ask the user to reply with the number(s) (comma-separated for multi-select), and wait. Functionally the same pause-and-wait; loses the structured button/checkbox UI. |
 | Opus/Sonnet/Haiku-specific model gating, incl. `/model claude-opus-4-8`. | Same stop-and-confirm discipline, adapted to Copilot's model picker instead of one named Claude model — still requires a specific frontier-class model, not "Auto." Where the upstream skill deliberately routes specific subagent *tasks* to a cheaper vs. stronger model tier (e.g. Haiku for mechanical extraction, Sonnet for shape-variable extraction), this port keeps that tiering — generically, as "lightweight/fast model" vs. "frontier reasoning model" — since the underlying reasoning (cost vs. reliability trade-off) isn't Claude-specific. |
 | An entire section of operational discipline for Claude Code's Bash tool's TLS/sandbox failure modes (manual hand-off to the user's own terminal, one command at a time). | Rewritten, not just relabeled: VS Code's terminal tool has its *own*, different sandboxing — confirmed to block network access by default with a **built-in retry-with-confirmation** flow, which the Claude Code Bash tool doesn't have. This port tries that retry first; the manual hand-off is now a fallback, not the first move. See `SKILL.md`'s **`git` + `gh` failure policy** section. |
-| `Co-Authored-By: Claude Code (VulnFix)` trailer on commits/PRs. | `Co-Authored-By: GitHub Copilot (VulnFix)` — fixed at the source, in the shared `vulnhunter-fix/templates/` and `prompts/worker_agent_common.md` — leaving the old attribution would have been factually wrong in real git history regardless of which platform produced the commit. |
+| `Co-Authored-By: Claude Code (VulnFix)` trailer on commits/PRs. | `Co-Authored-By: GitHub Copilot (VulnFix)` — applied via install-time text substitution (see "Small wording differences" above), not a file override — leaving the old attribution would have been factually wrong in real git history regardless of which platform produced the commit. |
 | `${SKILL_DIR}` resolved automatically by the platform. | No Copilot equivalent exists. Bound explicitly in `SKILL.md` Step 0 (derived from the path the agent read `SKILL.md` from, with a documented fallback default). |
-| Scripts, references, templates, tests, and the `vulnhunter_fix` Python package. | Not duplicated as whole directories — see "Why this directory doesn't look like three complete, standalone skills" above. A small number of individual files inside them are overlaid with deliberate deltas (the `Co-Authored-By` attribution in `templates/`, and a few comments in `vulnhunter_fix/graph/` generalized from "the Claude Code sandbox" to "macOS agent sandboxes," since VS Code Copilot's terminal tool sandboxes similarly) — these deltas apply to the Copilot install only, by design, since the comment/attribution difference is specifically about which platform is running. |
+| Scripts, references, templates, tests, and the `vulnhunter_fix` Python package. | Not duplicated at all — see "Why this directory doesn't look like three complete, standalone skills" above. A handful of individual files get a small, install-time text substitution (the `Co-Authored-By` attribution, a few comments generalized from "the Claude Code sandbox" to "macOS agent sandboxes") rather than a file override — see "Small wording differences" above for why. |
 
 `/vulnhunt-fix-verify`-specific:
 
@@ -275,13 +299,13 @@ vulnhunt-copilot/
     │   └── phases/                 (2 of 4 files — the other 2, plus comment_rules.md, come from the base directory)
     └── vulnhunter-fix/            # overlay onto ../../vulnhunter-fix/ — installs as ~/.copilot/skills/vulnhunter-fix/
         ├── SKILL.md
-        ├── prompts/                 (6 of 17 files — the rest come from the base directory)
-        ├── scripts/                 (2 files — comment-only deltas; the other ~28 come from base)
-        ├── templates/                (3 files — Co-Authored-By attribution; nothing else here)
-        ├── tests/                   (1 file — comment-only delta; the rest come from base)
-        └── vulnhunter_fix/graph/    (2 files — comment-only deltas; the rest of the
-                                       package, including all other __init__.py files,
-                                       comes from the base directory)
+        └── prompts/parse_issues.md  # the only other overlay file — everything else
+                                       # (16 other prompts, scripts/, references/,
+                                       # templates/, tests/, the vulnhunter_fix/
+                                       # package) comes from the base directory,
+                                       # with a small install-time text substitution
+                                       # applied to a handful of files — see
+                                       # scripts/apply_substitutions.py
 ```
 
 See "Why this directory doesn't look like three complete, standalone

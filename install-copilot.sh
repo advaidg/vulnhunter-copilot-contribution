@@ -138,6 +138,20 @@ for name in "${SKILLS[@]}"; do
     echo "Installed $name (copied to $dst)"
 
     if [ "$name" = "vulnhunter-fix" ]; then
+        # A handful of base files need small, well-defined text substitutions
+        # (attribution trailers, a few tool-name mentions in comments) rather
+        # than a full duplicate overlay copy — see apply_substitutions.py for
+        # why and exactly what changes. Fails loudly if upstream wording has
+        # drifted since the substitution list was written, rather than
+        # silently leaving stale Claude Code wording in the Copilot install.
+        SUBST_PY="$(find_python)" || {
+            echo "error: python3.11+ not found (needed to apply Copilot text substitutions)." >&2
+            exit 1
+        }
+        if ! "$SUBST_PY" "$SCRIPT_DIR/vulnhunt-copilot/scripts/apply_substitutions.py" "$dst"; then
+            echo "error: failed to apply Copilot text substitutions to $dst" >&2
+            exit 1
+        fi
         build_vulnfix_venv "$dst"
     fi
 

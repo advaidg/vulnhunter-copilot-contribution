@@ -49,7 +49,7 @@ endlocal
 exit /b 0
 
 :install_one
-setlocal
+setlocal EnableDelayedExpansion
 set "name=%~1"
 set "base=%SCRIPT_DIR%\%name%"
 set "overlay=%SCRIPT_DIR%\vulnhunt-copilot\skills\%name%"
@@ -108,6 +108,22 @@ git -C "%SCRIPT_DIR%" rev-parse HEAD > "%dst%\.installed-from" 2>nul
 echo Installed %name% (copied to %dst%)
 
 if "%name%"=="vulnhunter-fix" (
+    rem A handful of base files need small, well-defined text substitutions
+    rem (attribution trailers, a few tool-name mentions in comments) rather
+    rem than a full duplicate overlay copy -- see apply_substitutions.py for
+    rem why and exactly what changes. Fails loudly if upstream wording has
+    rem drifted since the substitution list was written.
+    set "PYEXE="
+    call :find_python
+    if "!PYEXE!"=="" (
+        echo error: python3.11+ not found ^(needed to apply Copilot text substitutions^). 1>&2
+        endlocal & exit /b 1
+    )
+    call !PYEXE! "%SCRIPT_DIR%\vulnhunt-copilot\scripts\apply_substitutions.py" "%dst%"
+    if not !ERRORLEVEL!==0 (
+        echo error: failed to apply Copilot text substitutions to %dst% 1>&2
+        endlocal & exit /b 1
+    )
     call :build_vulnfix_venv "%dst%"
     if errorlevel 1 (
         endlocal & exit /b 1
