@@ -69,8 +69,8 @@ jobs:
             ${{ matrix.project }}/coverage.xml
           if-no-files-found: ignore
 
-  copilot-port-substitutions:
-    name: verify vulnhunt-copilot's text substitutions still match
+  copilot-port-consistency:
+    name: verify vulnhunt-copilot stays in sync with base
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -93,3 +93,18 @@ jobs:
       # surfacing later as a broken Copilot install for someone else.
       - name: Check substitution rules against vulnhunter-fix/
         run: python3 vulnhunt-copilot/scripts/apply_substitutions.py --check vulnhunter-fix
+
+      # The overlay files that stayed full files (SKILL.md, phase2_hunt.md,
+      # parse_issues.md, etc.) have no substitution list to check -- this
+      # instead pins each one's base counterpart's content hash and fails if
+      # the live base file has changed since, so a base fix doesn't silently
+      # fail to reach the Copilot overlay. See check_overlay_freshness.py.
+      - name: Check overlay files against their recorded base hash
+        run: python3 vulnhunt-copilot/scripts/check_overlay_freshness.py .
+
+      # vulnhunter-fix's bundled-venv dependency pin is duplicated across
+      # install.sh, install-copilot.sh, install.cmd, and install-copilot.cmd
+      # (each install script builds its own venv independently) -- this
+      # catches the four copies drifting apart.
+      - name: Check dependency pins match across install scripts
+        run: python3 vulnhunt-copilot/scripts/check_dep_pins_consistent.py .
