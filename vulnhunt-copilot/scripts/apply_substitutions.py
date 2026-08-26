@@ -26,9 +26,18 @@ still applies" instead of quietly drifting.
 
 Usage:
     apply_substitutions.py <installed-vulnhunter-fix-dir>
+    apply_substitutions.py --check <vulnhunter-fix-dir>
 
 Exits non-zero (with a specific file/rule identified) if any rule's
 expected text isn't found, or is found an unexpected number of times.
+
+--check runs the same verification but never writes: it's meant to run in
+CI against the repo's own vulnhunter-fix/ directory on every PR, so that a
+change to the base wording that breaks a rule is caught in the PR that
+introduced it -- not later, silently, whenever someone next runs
+install-copilot.sh. Without --check, this script only ever runs at install
+time, which means the person who broke a rule and the person who discovers
+it broken are almost never the same person.
 """
 
 from __future__ import annotations
@@ -177,21 +186,31 @@ RULES: list[tuple[str, str, str, int]] = [
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: apply_substitutions.py <installed-vulnhunter-fix-dir>", file=sys.stderr)
+    args = sys.argv[1:]
+    check_only = "--check" in args
+    if check_only:
+        args = [a for a in args if a != "--check"]
+    if len(args) != 1:
+        print(
+            "usage: apply_substitutions.py [--check] <vulnhunter-fix-dir>",
+            file=sys.stderr,
+        )
         return 2
-    skill_dir = Path(sys.argv[1])
+    skill_dir = Path(args[0])
 
     by_file: dict[str, list[tuple[str, str, int]]] = {}
     for relpath, old, new, expected in RULES:
         by_file.setdefault(relpath, []).append((old, new, expected))
 
+    had_error = False
     for relpath, rules in by_file.items():
         target = skill_dir / relpath
         if not target.is_file():
-            print(f"error: {target} not found — cannot apply substitutions", file=sys.stderr)
-            return 1
+            print(f"error: {target} not found — cannot verify substitutions", file=sys.stderr)
+            had_error = True
+            continue
         content = target.read_text()
+        file_ok = True
         for old, new, expected in rules:
             found = content.count(old)
             if found != expected:
@@ -203,11 +222,27 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 print(f"--- expected text ---\n{old}", file=sys.stderr)
-                return 1
+                file_ok = False
+                had_error = True
+                continue
             content = content.replace(old, new)
-        target.write_text(content)
-        print(f"  applied {len(rules)} substitution(s) to {relpath}")
+        if not file_ok:
+            # Don't apply partial substitutions for a file with a failed
+            # rule -- report every problem in this file before giving up on
+            # it, but never write a half-substituted result. This is scoped
+            # to THIS file only -- an error in one file must not cause a
+            # later, unrelated file's valid substitutions to be discarded.
+            continue
+        if check_only:
+            print(f"  OK: {len(rules)} rule(s) verified against {relpath}")
+        else:
+            target.write_text(content)
+            print(f"  applied {len(rules)} substitution(s) to {relpath}")
 
+    if had_error:
+        return 1
+    if check_only:
+        print(f"All {len(RULES)} substitution rule(s) still match current wording.")
     return 0
 
 

@@ -68,3 +68,28 @@ jobs:
             ${{ matrix.project }}/pytest-report.xml
             ${{ matrix.project }}/coverage.xml
           if-no-files-found: ignore
+
+  copilot-port-substitutions:
+    name: verify vulnhunt-copilot's text substitutions still match
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: "3.12"
+
+      # vulnhunt-copilot/ overlays only the files that genuinely differ from
+      # vulnhunter-fix/ for the Copilot port; a small number of other files
+      # get a text substitution applied at install time instead of a full
+      # duplicate copy (see vulnhunt-copilot/scripts/apply_substitutions.py
+      # and vulnhunt-copilot/README.md's "Small wording differences"
+      # section for why). --check verifies every substitution's expected
+      # text is still present in vulnhunter-fix/ as committed, without
+      # writing anything. This is what makes a future edit to one of those
+      # files fail here, in the PR that makes the edit, instead of silently
+      # surfacing later as a broken Copilot install for someone else.
+      - name: Check substitution rules against vulnhunter-fix/
+        run: python3 vulnhunt-copilot/scripts/apply_substitutions.py --check vulnhunter-fix
