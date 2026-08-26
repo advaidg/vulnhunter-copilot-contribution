@@ -182,6 +182,24 @@ RULES: list[tuple[str, str, str, int]] = [
         "    sandbox / permission-denied entries (macOS agent sandboxes — Claude\n    Code's Bash tool and VS Code Copilot's terminal tool both block\n",
         1,
     ),
+    # preflight.py's Claude CLI check is a hard failure for every base
+    # (Claude Code) user, which is correct there — but it would make Step 0
+    # of /vulnhunter-fix unpassable for every Copilot user, since installing
+    # the Claude Code CLI isn't part of this port. Downgrade both outcomes
+    # to optional=True (a [WARN], not a [FAIL]) so the check still runs and
+    # still reports, but never blocks a Copilot-only machine.
+    (
+        "scripts/preflight.py",
+        '        check("Claude CLI", False, "not found in PATH")\n        return',
+        '        check(\n            "Claude CLI", False,\n            "not found in PATH (optional here — only needed if this workflow "\n            "is also driven by the Claude Code CLI)",\n            optional=True,\n        )\n        return',
+        1,
+    ),
+    (
+        "scripts/preflight.py",
+        '        check("Claude CLI", False, "cannot determine version")',
+        '        check("Claude CLI", False, "cannot determine version", optional=True)',
+        1,
+    ),
 ]
 
 
@@ -209,7 +227,7 @@ def main() -> int:
             print(f"error: {target} not found — cannot verify substitutions", file=sys.stderr)
             had_error = True
             continue
-        content = target.read_text()
+        content = target.read_text(encoding="utf-8")
         file_ok = True
         for old, new, expected in rules:
             found = content.count(old)
@@ -236,7 +254,7 @@ def main() -> int:
         if check_only:
             print(f"  OK: {len(rules)} rule(s) verified against {relpath}")
         else:
-            target.write_text(content)
+            target.write_text(content, encoding="utf-8")
             print(f"  applied {len(rules)} substitution(s) to {relpath}")
 
     if had_error:
