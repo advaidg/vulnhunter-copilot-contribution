@@ -8,9 +8,12 @@
 > genuine parallel subagent dispatch (the `agent`/`runSubagent` tool — see
 > VS Code's "Subagents" docs). This revision uses that to run the same
 > parallel procedure the Claude Code version uses. If your session doesn't
-> have a subagent tool available (older client, or disabled by policy), use
-> the **Sequential Fallback** section at the end of this file instead — do
-> not skip partitions or class groups to compensate.
+> have a subagent tool available at all (older client, or disabled by
+> policy), use the **Sequential Fallback (only if subagent dispatch is
+> unavailable for the entire session)** section at the end of this file
+> instead — do not skip partitions or class groups to compensate. A single
+> partition marked `SEQUENTIAL-FALLBACK` by Phase 1 (subagents otherwise
+> available) uses the separate **Partition Fallback** section instead.
 
 ## Phase 2: Vulnerability Hunting
 
@@ -77,7 +80,8 @@ If you dispatched fewer, you violated the procedure.
 
    - **Normal partitions**: one subagent per class group (3 subagents per partition).
    - **SEQUENTIAL-FALLBACK partitions**: process sequentially in the orchestrator's
-     context, but iterate through class groups for each entry point group.
+     context, but iterate through class groups for each entry point group — see
+     **Partition Fallback: Sequential Processing with Checkpointing** below.
 
 3. **After all subagents return**, run the aggregation procedure (see Results
    Aggregation below).
@@ -261,10 +265,32 @@ results, the orchestrator merges them:
    Every "fail open" = Conditional Validation Bypass CANDIDATE (CWE-306).
    This requires cross-input reasoning that single-partition subagents cannot do.
 
-### Sequential Fallback (only if subagent dispatch is unavailable)
+### Partition Fallback: Sequential Processing with Checkpointing
 
-If your Copilot Chat session doesn't have a subagent tool available, process
-each partition directly instead:
+When a partition is marked `SEQUENTIAL-FALLBACK` by Phase 1 (too large to
+parallelize effectively, even though subagent dispatch is otherwise
+available this session), the orchestrator processes that one partition
+directly instead of dispatching subagents for it:
+
+1. Group the partition's inputs by entry point.
+2. For each entry point group, iterate through class groups (INJ, NAV, LOG),
+   tracing all inputs against that class group's vulnerability classes.
+3. After completing each entry point × class group, save intermediate candidates to
+   `${VULNHUNT_DIR}/candidates/sg-N_entrypoint_classgroup.md` before proceeding.
+4. This limits context accumulation — each pass starts with only one class group's
+   gate definitions and its own inputs in active context.
+5. After all entry point groups are processed, collect all saved candidates
+   and merge them into the main aggregation flow.
+
+This is distinct from the session-wide fallback below: a single
+`SEQUENTIAL-FALLBACK` partition gets this treatment while every other
+partition in the same run still dispatches subagents normally.
+
+### Sequential Fallback (only if subagent dispatch is unavailable for the entire session)
+
+If your Copilot Chat session doesn't have a subagent tool available at all,
+process every partition directly instead — not just ones marked
+`SEQUENTIAL-FALLBACK`:
 
 1. Group the partition's inputs by entry point.
 2. For each entry point group, iterate through class groups (INJ, NAV, LOG),

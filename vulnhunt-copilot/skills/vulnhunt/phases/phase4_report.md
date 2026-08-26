@@ -141,11 +141,13 @@ Field definitions:
 - **Branch** = the `VULNHUNT_BRANCH` value resolved in the same Step 0.
   Format: `branch-name [abc1234]`, or `unknown` if the source isn't a git repo.
   Do not recompute it.
-- **Model** = the model used for this session. If the model picker was set to
-  **Auto**, record "Auto" plus the specific model it routed to for this run
-  if that's visible (hover the response in Copilot Chat); otherwise record
-  the specific model shown in the picker (GPT-5.1-Codex-Max, Claude Sonnet
-  4.5, etc.).
+- **Model** = the model used for this session. This should be a specific,
+  named frontier-class model per Step 0. If the user explicitly overrode
+  Step 0's model check and continued on **Auto** (or another non-frontier
+  model) anyway, record "Auto" plus the specific model it routed to for this
+  run if that's visible (hover the response in Copilot Chat); otherwise
+  record the specific model shown in the picker (GPT-5.1-Codex-Max, Claude
+  Sonnet 4.5, etc.).
 
 After the header, include:
 - Summary table of findings (ID, title, severity, CWE, status)
