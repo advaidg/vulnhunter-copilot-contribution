@@ -49,12 +49,14 @@ def sha256_of(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def discover_overlay_files(repo_root: Path) -> dict[str, Path]:
-    """Map "skill/relpath" -> base file Path, for every overlay file that has
-    a same-relative-path base counterpart. Files without a base counterpart
-    (e.g. schema files copied in from elsewhere at install time) are not
-    this script's concern -- there's nothing to drift against."""
-    found: dict[str, Path] = {}
+def discover_overlay_files(repo_root: Path) -> dict[str, Path | None]:
+    """Map "skill/relpath" -> base file Path, for every overlay file. The
+    value is None if the overlay file's same-relative-path base counterpart
+    is missing (renamed or deleted since the overlay was written) -- that's
+    reported as an error by the caller rather than silently dropped, since a
+    vanished base leaves the overlay file orphaned with nothing to diff
+    against and no signal that it happened."""
+    found: dict[str, Path | None] = {}
     for skill in SKILL_NAMES:
         overlay_root = repo_root / "vulnhunt-copilot" / "skills" / skill
         if not overlay_root.is_dir():
@@ -64,8 +66,8 @@ def discover_overlay_files(repo_root: Path) -> dict[str, Path]:
                 continue
             relpath = overlay_file.relative_to(overlay_root)
             base_file = repo_root / skill / relpath
-            if base_file.is_file():
-                found[f"{skill}/{relpath.as_posix()}"] = base_file
+            key = f"{skill}/{relpath.as_posix()}"
+            found[key] = base_file if base_file.is_file() else None
     return found
 
 
@@ -87,8 +89,29 @@ def main() -> int:
         print("error: no overlay files with a base counterpart found -- unexpected", file=sys.stderr)
         return 1
 
+    orphaned = {key for key, base in overlay_files.items() if base is None}
+    if orphaned:
+        for key in sorted(orphaned):
+            print(
+                f"error: {key} is an overlay file but its base counterpart no longer "
+                f"exists (renamed or deleted?) -- this overlay is now orphaned. Either "
+                f"restore the base file, or remove this overlay file (and its entry in "
+                f"{MANIFEST_NAME}, if present) if the base file was intentionally "
+                f"moved/removed.",
+                file=sys.stderr,
+            )
+        if generate:
+            print(
+                "error: refusing to --generate while orphaned overlay files exist -- "
+                "resolve them first, see above.",
+                file=sys.stderr,
+            )
+            return 1
+
     if generate:
-        manifest = {key: sha256_of(base) for key, base in overlay_files.items()}
+        manifest = {
+            key: sha256_of(base) for key, base in overlay_files.items() if base is not None
+        }
         manifest_path.write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
@@ -105,8 +128,10 @@ def main() -> int:
         return 1
     manifest: dict[str, str] = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    had_error = False
+    had_error = bool(orphaned)
     for key, base in sorted(overlay_files.items()):
+        if base is None:
+            continue  # already reported above
         recorded = manifest.get(key)
         if recorded is None:
             print(

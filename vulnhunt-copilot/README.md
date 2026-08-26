@@ -184,10 +184,12 @@ uninstall-copilot.cmd
 > expect before relying on it**, and see
 > `vulnhunt-copilot/scripts/windows/configure-terminal-profile.ps1` if you
 > want to run or adapt it yourself. `uninstall-copilot.cmd` calls the
-> companion `remove-terminal-profile.ps1`, which reverts the setting from
-> its backup — but only if the live value still looks unchanged since
-> install; it leaves the setting alone (and tells you why) if you changed it
-> yourself in the meantime. Same macOS-only caveat applies.
+> companion `remove-terminal-profile.ps1`, which removes just that one
+> setting — not a whole-file restore from the backup, which would also
+> discard any unrelated `settings.json` changes made since install — but
+> only if the live value still looks unchanged since install; it leaves the
+> setting alone (and tells you why) if you changed it yourself in the
+> meantime. Same macOS-only caveat applies.
 
 `install-copilot.sh`/`install-copilot.cmd` assemble each skill at
 `~/.copilot/skills/<name>/` from the base + overlay directories described

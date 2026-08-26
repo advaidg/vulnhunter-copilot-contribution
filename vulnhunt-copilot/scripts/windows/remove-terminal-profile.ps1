@@ -20,6 +20,17 @@
     value the user deliberately changed since install would be worse than
     doing nothing.
 
+    When it does act, it removes only the one property this installer
+    added and rewrites the file -- it does NOT restore settings.json from
+    the backup wholesale. A user's settings.json accumulates unrelated
+    changes (theme, font, extension config) between install and uninstall;
+    restoring the whole file from an install-time snapshot would silently
+    discard all of that to undo one key. The backup's only job was letting
+    configure-terminal-profile.ps1 round-trip the file through
+    ConvertFrom-Json/ConvertTo-Json without permanently losing the
+    pre-install content if something went wrong during install itself --
+    it was never meant to be replayed at uninstall time.
+
     Called from uninstall-copilot.cmd; safe to run standalone.
 
 .NOTES
@@ -77,7 +88,11 @@ if (-not $currentPath -or $currentPath -notmatch '\\Git\\bin\\bash\.exe$') {
     exit 0
 }
 
-Copy-Item -LiteralPath $BackupPath -Destination $SettingsPath -Force
+# Remove only the one property this installer added -- do not restore the
+# whole file from the backup, which would also discard every unrelated
+# settings.json change the user made between install and uninstall.
+$settings.PSObject.Properties.Remove($SettingKey)
+($settings | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $SettingsPath -Encoding UTF8
 Remove-Item -LiteralPath $BackupPath -Force
-Write-Host "  restored $SettingsPath from $BackupPath"
-Write-Host "  $SettingKey reverted to its pre-install value."
+Write-Host "  removed $SettingKey from $SettingsPath"
+Write-Host "  (everything else in settings.json was left untouched)"
