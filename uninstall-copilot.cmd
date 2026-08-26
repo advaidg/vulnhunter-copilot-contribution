@@ -10,6 +10,8 @@ if "%USERPROFILE%"=="" (
     exit /b 1
 )
 
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "SKILLS_PARENT=%USERPROFILE%\.copilot\skills"
 
 rem Skill names to remove (must match the names install-copilot.cmd writes).
@@ -24,6 +26,12 @@ for %%S in (vulnhunt vulnhunt-fix-verify vulnhunter-fix) do (
         echo %%S is not installed ^(no entry at !dst!^)
     )
 )
+
+rem Best-effort: revert the agent-terminal setting install-copilot.cmd wrote,
+rem but only if it still looks unchanged since install (see the script for
+rem the exact condition). Runs regardless of removed_any, since a user can
+rem re-run uninstall after skills are already gone just to clean this up.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\vulnhunt-copilot\scripts\windows\remove-terminal-profile.ps1"
 
 echo.
 if "%removed_any%"=="1" (
