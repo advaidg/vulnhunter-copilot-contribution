@@ -43,9 +43,12 @@ install destination = base(vulnhunt/) + overlay(vulnhunt-copilot/skills/vulnhunt
 
 This means a future fix to, say, `vulnhunter-fix/scripts/preflight.py`
 automatically applies to both the Claude Code and Copilot installs, with one
-edit and no drift risk — there is exactly one copy of that file in the repo.
-It also means this directory's file count is not the whole story: if you're
-looking for `vulnhunt-copilot/skills/vulnhunt/phases/phase2_class_inj.md`
+edit and no drift risk — there is exactly one copy of that file in the repo
+(one specific check in it *is* downgraded for Copilot via a text
+substitution — see "Small wording differences" below — but the file itself
+is never duplicated). It also means this directory's file count is not the
+whole story: if you're looking for
+`vulnhunt-copilot/skills/vulnhunt/phases/phase2_class_inj.md`
 and don't find it, that's correct — it's identical to
 `vulnhunt/phases/phase2_class_inj.md`, so the overlay doesn't need its own
 copy; the installer pulls it from the base directory.
@@ -57,11 +60,16 @@ come from the base directory unchanged: `phase2_class_inj.md`,
 `phase2_class_nav.md`, `phase2_class_log.md`, `phase2b_verify.md`,
 `phase3c_fixes.md`.
 
-**`vulnhunt-fix-verify`** — overlay has `SKILL.md` and two phase files
-(`phase0_preflight.md`, `phase2_verify.md`); `phase1_extract.md`,
-`phase4_emit.md`, and `comment_rules.md` are identical and come from the
-base directory. `verify_disposition.schema.json` isn't in either skill's
-own base tree — the install scripts copy it in directly from
+**`vulnhunt-fix-verify`** — overlay has `SKILL.md` and three phase files
+(`phase0_preflight.md`, `phase2_verify.md`, `phase4_emit.md`);
+`phase1_extract.md` and `comment_rules.md` are identical and come from the
+base directory. `phase4_emit.md` needs an override rather than a
+substitution because its one-line change is a link, not plain prose: base
+says the verification schema lives "at the repo root," which doesn't
+resolve once this skill is installed standalone — the overlay points it at
+`../verify_disposition.schema.json` instead, matching the same fix already
+applied in `SKILL.md`. `verify_disposition.schema.json` itself isn't in
+either skill's own base tree — the install scripts copy it in directly from
 `vulnhunter-agent/verify_disposition.schema.json`, its actual canonical
 location, rather than storing a third copy here.
 
@@ -115,11 +123,31 @@ This covers the `Co-Authored-By` trailer (in `templates/pr_body.md`,
 neutral-phrasing wording changes in `prompts/{implement,verify}.md` and
 `scripts/cluster_score.py`, a `Sonnet` → generic model-tier wording change
 in `prompts/verify.md`, `prompts/parse.md`, and
-`scripts/validate_findings_draft.py`, and "the Claude Code sandbox" →
+`scripts/validate_findings_draft.py`, "the Claude Code sandbox" →
 "macOS agent sandboxes" comment generalizations in
-`tests/test_graph_build_bugs.py` and `vulnhunter_fix/graph/{build,config}.py`.
-None of these touch executable logic — every changed line is a comment,
-docstring, or piece of prose.
+`tests/test_graph_build_bugs.py` and `vulnhunter_fix/graph/{build,config}.py`,
+and one *behavioral* substitution in `scripts/preflight.py`: base treats a
+missing Claude CLI as a hard failure that blocks `/vulnhunter-fix` from
+proceeding, which is correct for Claude Code users but would make Step 0
+unpassable on a Copilot-only machine, since installing the Claude Code CLI
+isn't part of this port. The substitution downgrades that one check to
+`optional=True` (a `[WARN]`, not a `[FAIL]`) — it still runs and still
+reports if the Claude CLI happens to be present, it just never blocks
+progress when it isn't. Every other substitution above is comment/docstring
+wording only; this is the one exception, called out explicitly because it
+changes what the script actually does, not just what it says.
+
+Two more checks run in CI alongside `apply_substitutions.py --check`, for
+the overlay files this mechanism doesn't cover:
+`check_overlay_freshness.py` pins each full-file overlay's (`SKILL.md`,
+`phase2_hunt.md`, `parse_issues.md`, etc.) base counterpart's content hash
+and fails if the live base file has changed since — the same "fail loud on
+drift" principle, extended to the files that are too different from base to
+express as a substitution list. `check_dep_pins_consistent.py` asserts
+`vulnhunter-fix`'s bundled venv dependency pin is identical across all four
+install scripts (`install.sh`, `install-copilot.sh`, `install.cmd`,
+`install-copilot.cmd`, each of which builds its own venv independently and
+previously relied on a comment to keep the pin in sync by hand).
 
 ## Install
 
@@ -155,7 +183,11 @@ uninstall-copilot.cmd
 > not run against a real Windows/VS Code install — verify it did what you
 > expect before relying on it**, and see
 > `vulnhunt-copilot/scripts/windows/configure-terminal-profile.ps1` if you
-> want to run or adapt it yourself.
+> want to run or adapt it yourself. `uninstall-copilot.cmd` calls the
+> companion `remove-terminal-profile.ps1`, which reverts the setting from
+> its backup — but only if the live value still looks unchanged since
+> install; it leaves the setting alone (and tells you why) if you changed it
+> yourself in the meantime. Same macOS-only caveat applies.
 
 `install-copilot.sh`/`install-copilot.cmd` assemble each skill at
 `~/.copilot/skills/<name>/` from the base + overlay directories described
@@ -289,14 +321,21 @@ why.
 ```
 vulnhunt-copilot/
 ├── README.md
-├── scripts/windows/configure-terminal-profile.ps1
+├── scripts/
+│   ├── apply_substitutions.py         # install-time text substitutions (see above)
+│   ├── check_overlay_freshness.py     # CI: base-hash drift check for full-file overlays
+│   ├── check_dep_pins_consistent.py   # CI: dep-pin parity across the 4 install scripts
+│   ├── overlay_base_hashes.json       # manifest check_overlay_freshness.py verifies against
+│   └── windows/
+│       ├── configure-terminal-profile.ps1  # install: point Copilot's terminal at Git Bash
+│       └── remove-terminal-profile.ps1     # uninstall: revert it, best-effort
 └── skills/
     ├── vulnhunt/                  # overlay onto ../../vulnhunt/ — installs as ~/.copilot/skills/vulnhunt/
     │   ├── SKILL.md
     │   └── phases/                 (6 of 11 files — the other 5 come from the base directory)
     ├── vulnhunt-fix-verify/       # overlay onto ../../vulnhunt-fix-verify/ — installs as ~/.copilot/skills/vulnhunt-fix-verify/
     │   ├── SKILL.md
-    │   └── phases/                 (2 of 4 files — the other 2, plus comment_rules.md, come from the base directory)
+    │   └── phases/                 (3 of 4 files — the other, plus comment_rules.md, come from the base directory)
     └── vulnhunter-fix/            # overlay onto ../../vulnhunter-fix/ — installs as ~/.copilot/skills/vulnhunter-fix/
         ├── SKILL.md
         └── prompts/parse_issues.md  # the only other overlay file — everything else
