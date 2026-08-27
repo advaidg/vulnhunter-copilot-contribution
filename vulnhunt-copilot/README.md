@@ -144,35 +144,49 @@ the overlay files this mechanism doesn't cover:
 and fails if the live base file has changed since — the same "fail loud on
 drift" principle, extended to the files that are too different from base to
 express as a substitution list. `check_dep_pins_consistent.py` asserts
-`vulnhunter-fix`'s bundled venv dependency pin is identical between the two
-shared install-helper files, `_install_common.sh` and `_install_common.cmd`
-(see "One installer, not two" below) — the smallest amount of duplication a
-`.sh`/`.cmd` split can't avoid, previously relied on a comment to keep in
-sync by hand.
+`vulnhunter-fix`'s bundled venv dependency pin is identical across
+`_install_common.sh`, `install.cmd`, and `install-copilot.cmd` (see "One
+installer, not two" below for why it's three places and not one) —
+previously relied on a comment to keep in sync by hand.
 
-### One installer, not two: `_install_common.sh` / `_install_common.cmd`
+### One installer, not two — on the bash side only
 
 `install.sh` and `install-copilot.sh` both need to locate a Python 3.11+
 interpreter and build vulnhunter-fix's bundled venv — identical logic,
 independent of which platform's skill is being installed. Rather than
 duplicate that logic in both scripts (as an earlier revision of this port
-did), both source a shared `_install_common.sh` at the repo root; `install.cmd`
-and `install-copilot.cmd` share the equivalent logic the same way, via
-`call "%SCRIPT_DIR%\_install_common.cmd" :label` — cmd.exe's standard
-"batch library" pattern, jumping straight to a label in another file without
-running anything above it. Each script sets `INSTALL_INVOCATION` to its own
-name before sourcing/calling in, so the one error message that names "which
-script to re-run" still names the right one.
+did), both source a shared `_install_common.sh` at the repo root. Each
+script sets `INSTALL_INVOCATION` to its own name before sourcing it, so the
+one error message that names "which script to re-run" still names the
+right one.
 
-This did mean touching `install.sh`/`install.cmd` — Capital One's existing,
-pre-PR installers for the Claude Code skills — for the first time in this
-PR, where every prior commit had been purely additive to the base product.
-The change there is narrow and behavior-preserving: the `find_python`/
-`build_vulnfix_venv` function bodies moved out verbatim into the shared
-file, replaced in-place with a call into it. Existing Claude Code installs
-are unaffected — re-verified end-to-end after the change (fresh install,
-full skill set, bundled venv built and smoke-tested, output identical to
-before).
+**The `.cmd` side was not unified the same way, after an attempt broke it.**
+A prior revision tried the equivalent via `call "%SCRIPT_DIR%\_install_common.cmd" :label`,
+reasoning that cmd.exe's documented `CALL :label` cross-file form would jump
+straight into a label in another `.cmd` file. That form doesn't exist:
+`CALL otherfile.cmd :label` does not jump to `:label` in `otherfile.cmd` — it
+runs `otherfile.cmd` from the top, with `:label` passed in as `%1`. Verified
+against multiple independent sources (Microsoft's own `call /?` reference,
+SS64's documentation, and the well-known "BatchLibrary" idiom, which exists
+specifically because this jump isn't automatic — it requires an explicit
+`call :%1` dispatcher line the attempted shared file never had). Concretely,
+this broke both `.cmd` installers: `_install_common.cmd`'s
+`:build_vulnfix_venv` would read the literal string `:build_vulnfix_venv` as
+its own destination-path argument (since the real argument shifted to `%2`
+and was never read), try to build a venv at
+`:build_vulnfix_venv\.venv` — an illegal Windows path — and abort the
+install with a nonsense error, on `install.cmd` (Capital One's existing,
+pre-PR Claude Code installer) as much as on `install-copilot.cmd`.
+
+Caught before merge, and reverted: `install.cmd` and `install-copilot.cmd`
+are byte-identical to their state before that attempt, each keeping its own
+copy of `find_python`/`build_vulnfix_venv` again, guarded by
+`check_dep_pins_consistent.py` the same as before. `install.sh`'s bash-side
+unification is unaffected by any of this and was independently
+verified end-to-end (fresh install, full skill set, bundled venv built and
+smoke-tested, output byte-identical to before the change) — this section
+exists mainly as a record of why the `.cmd` side still has its own copy,
+for the next person who's tempted to try unifying it the same way.
 
 ## Install
 
@@ -351,7 +365,7 @@ vulnhunt-copilot/
 ├── scripts/
 │   ├── apply_substitutions.py         # install-time text substitutions (see above)
 │   ├── check_overlay_freshness.py     # CI: base-hash drift check for full-file overlays
-│   ├── check_dep_pins_consistent.py   # CI: dep-pin parity between the 2 shared install-helper files
+│   ├── check_dep_pins_consistent.py   # CI: dep-pin parity across _install_common.sh + both .cmd files
 │   ├── overlay_base_hashes.json       # manifest check_overlay_freshness.py verifies against
 │   └── windows/
 │       ├── configure-terminal-profile.ps1  # install: point Copilot's terminal at Git Bash

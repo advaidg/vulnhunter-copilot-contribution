@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""Assert vulnhunter-fix's runtime dependency pins are identical across the
-shared install-helper files.
+"""Assert vulnhunter-fix's runtime dependency pins are identical across every
+install script that defines its own copy.
 
-install.sh and install-copilot.sh both source _install_common.sh; install.cmd
-and install-copilot.cmd both call into _install_common.cmd -- both shared
-files define their own VULNFIX_DEPS (the venv the install scripts build for
-vulnhunter-fix bundles jsonschema and graphifyy at a pinned version range).
-Each file's comments say to keep the two in sync by hand -- nothing enforced
-it. This is a case where duplicating a value across a .sh and a .cmd file is
-unavoidable (there's no single syntax both can source), as long as something
-catches the two copies drifting apart. This is that something -- run in CI
-on every PR.
+install.sh and install-copilot.sh both source the shared _install_common.sh,
+so they can't drift from each other -- but install.cmd and install-copilot.cmd
+each still define their own VULNFIX_DEPS. An earlier revision of this port
+tried unifying the .cmd side the same way, into a shared _install_common.cmd
+called via cmd.exe's documented `CALL :label` cross-file form -- except that
+form doesn't exist: `CALL otherfile.cmd :label` does not jump to :label in
+otherfile.cmd, it runs otherfile.cmd from the top with ":label" passed as
+%1. That broke both .cmd installers (venv creation would fail against a
+literal ":build_vulnfix_venv" + ".venv" path). Reverted; the .cmd side goes
+back to two independent copies of VULNFIX_DEPS, same as before that attempt.
+
+So this checks three copies of the same value: _install_common.sh (shared by
+both bash scripts), install.cmd, and install-copilot.cmd. Each file's
+comments say to keep them in sync by hand -- nothing enforced it until this
+script, run in CI on every PR.
 
 Usage:
     check_dep_pins_consistent.py <repo-root>
@@ -27,7 +33,8 @@ from pathlib import Path
 # differing (bash array literal vs. cmd `set` with quoted tokens).
 FILES: dict[str, re.Pattern[str]] = {
     "_install_common.sh": re.compile(r'^VULNFIX_DEPS=\((.+)\)$', re.MULTILINE),
-    "_install_common.cmd": re.compile(r'^set VULNFIX_DEPS=(.+)$', re.MULTILINE),
+    "install.cmd": re.compile(r'^set VULNFIX_DEPS=(.+)$', re.MULTILINE),
+    "install-copilot.cmd": re.compile(r'^set VULNFIX_DEPS=(.+)$', re.MULTILINE),
 }
 
 
@@ -67,21 +74,21 @@ def main() -> int:
     }
     if mismatches:
         print(
-            f"error: vulnhunter-fix dependency pins have drifted apart between "
-            f"the shared install-helper files. {reference_file} has "
-            f"{reference_pins!r}; mismatched file(s):",
+            f"error: vulnhunter-fix dependency pins have drifted apart across "
+            f"install scripts. {reference_file} has {reference_pins!r}; "
+            f"mismatched file(s):",
             file=sys.stderr,
         )
         for relpath, pins in mismatches.items():
             print(f"  {relpath}: {pins!r}", file=sys.stderr)
         print(
-            "Update both _install_common.sh and _install_common.cmd's "
+            "Update _install_common.sh, install.cmd, and install-copilot.cmd's "
             "VULNFIX_DEPS to match, then re-run.",
             file=sys.stderr,
         )
         return 1
 
-    print(f"Both shared install-helper files agree: {reference_pins!r}")
+    print(f"All {len(pins_by_file)} install scripts agree: {reference_pins!r}")
     return 0
 
 
