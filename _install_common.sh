@@ -15,10 +15,11 @@ fi
 # graphifyy check hard-fails. jsonschema is required; graphifyy (import name
 # `graphify`) enables AST graph mode and falls back to grep when absent, but
 # preflight still requires it. Pin must match preflight.py REQ-GRA-001, and
-# stay identical to _install_common.cmd's copy of the same value (install.sh
-# and install-copilot.sh both source this file, so they can't drift from
-# each other; the .cmd side can't share this file directly, so its own copy
-# is the one remaining place this could drift -- CI enforces that via
+# stay identical to install.cmd's and install-copilot.cmd's own copies of the
+# same value (install.sh and install-copilot.sh both source this file, so
+# they can't drift from each other; the .cmd side has no shared file to
+# source -- each keeps its own copy, and those two are the remaining places
+# this could drift -- CI enforces all three staying in sync via
 # vulnhunt-copilot/scripts/check_dep_pins_consistent.py).
 VULNFIX_DEPS=("jsonschema>=4.18" "graphifyy>=0.8.14,<0.9.0")
 
