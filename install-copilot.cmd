@@ -13,6 +13,17 @@ set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "SKILLS_PARENT=%USERPROFILE%\.copilot\skills"
 
+rem :find_python/:build_vulnfix_venv are shared with install.cmd (both
+rem build the same bundled venv for vulnhunter-fix) -- see
+rem _install_common.cmd for why this is a separate file rather than
+rem duplicated in both scripts.
+set "INSTALL_INVOCATION=install-copilot.cmd"
+if not exist "%SCRIPT_DIR%\_install_common.cmd" (
+    echo Error: %SCRIPT_DIR%\_install_common.cmd not found. 1>&2
+    echo Make sure you are running this script from the repository root. 1>&2
+    exit /b 1
+)
+
 if not exist "%SKILLS_PARENT%" (
     echo Creating directory %SKILLS_PARENT%
     mkdir "%SKILLS_PARENT%"
@@ -114,7 +125,7 @@ if "%name%"=="vulnhunter-fix" (
     rem why and exactly what changes. Fails loudly if upstream wording has
     rem drifted since the substitution list was written.
     set "PYEXE="
-    call :find_python
+    call "%SCRIPT_DIR%\_install_common.cmd" :find_python
     if "!PYEXE!"=="" (
         echo error: python3.11+ not found ^(needed to apply Copilot text substitutions^). 1>&2
         endlocal & exit /b 1
@@ -124,80 +135,13 @@ if "%name%"=="vulnhunter-fix" (
         echo error: failed to apply Copilot text substitutions to %dst% 1>&2
         endlocal & exit /b 1
     )
-    call :build_vulnfix_venv "%dst%"
+    call "%SCRIPT_DIR%\_install_common.cmd" :build_vulnfix_venv "%dst%"
     if errorlevel 1 (
         endlocal & exit /b 1
     )
 )
 
 endlocal & set "installed_any=1" & exit /b 0
-
-:build_vulnfix_venv
-setlocal EnableDelayedExpansion
-set "skill_dir=%~1"
-set "venv=%skill_dir%\.venv"
-
-set "PYEXE="
-call :find_python
-if "%PYEXE%"=="" (
-    echo error: python 3.11+ not found ^(needed for vulnhunter-fix's bundled venv^). 1>&2
-    echo install Python 3.11+ from https://www.python.org/downloads/ and re-run install-copilot.cmd. 1>&2
-    endlocal & exit /b 1
-)
-
-if exist "%venv%\" (
-    rmdir /s /q "%venv%"
-)
-echo   creating bundled venv with %PYEXE%
-call %PYEXE% -m venv "%venv%"
-if not !ERRORLEVEL!==0 (
-    echo error: failed to create venv at %venv% 1>&2
-    endlocal & exit /b 1
-)
-
-set VULNFIX_DEPS="jsonschema>=4.18" "graphifyy>=0.8.14,<0.9.0"
-
-"%venv%\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check --upgrade pip
-if not !ERRORLEVEL!==0 (
-    echo error: failed to upgrade pip in %venv% 1>&2
-    endlocal & exit /b 1
-)
-echo   installing runtime deps into venv: %VULNFIX_DEPS%
-"%venv%\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check %VULNFIX_DEPS%
-if not !ERRORLEVEL!==0 (
-    echo error: failed to install bundled deps into %venv% 1>&2
-    endlocal & exit /b 1
-)
-
-"%venv%\Scripts\python.exe" -c "import jsonschema, graphify" >nul 2>&1
-if not !ERRORLEVEL!==0 (
-    echo error: bootstrap smoke test failed -- venv built but jsonschema/graphify not importable. 1>&2
-    echo        check %venv%\Lib\site-packages\ 1>&2
-    endlocal & exit /b 1
-)
-echo   bundled venv ready: %venv%
-endlocal & exit /b 0
-
-:find_python
-where py >nul 2>nul
-if !ERRORLEVEL!==0 (
-    py -3.11 -c "import sys" >nul 2>nul
-    if !ERRORLEVEL!==0 (
-        set "PYEXE=py -3.11"
-        exit /b 0
-    )
-)
-for %%C in (python3.13 python3.12 python3.11 python) do (
-    where %%C >nul 2>nul
-    if !ERRORLEVEL!==0 (
-        %%C -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,11) else 1)" >nul 2>nul
-        if !ERRORLEVEL!==0 (
-            set "PYEXE=%%C"
-            exit /b 0
-        )
-    )
-)
-exit /b 0
 
 :configure_git_bash_terminal
 setlocal EnableDelayedExpansion

@@ -144,10 +144,35 @@ the overlay files this mechanism doesn't cover:
 and fails if the live base file has changed since — the same "fail loud on
 drift" principle, extended to the files that are too different from base to
 express as a substitution list. `check_dep_pins_consistent.py` asserts
-`vulnhunter-fix`'s bundled venv dependency pin is identical across all four
-install scripts (`install.sh`, `install-copilot.sh`, `install.cmd`,
-`install-copilot.cmd`, each of which builds its own venv independently and
-previously relied on a comment to keep the pin in sync by hand).
+`vulnhunter-fix`'s bundled venv dependency pin is identical between the two
+shared install-helper files, `_install_common.sh` and `_install_common.cmd`
+(see "One installer, not two" below) — the smallest amount of duplication a
+`.sh`/`.cmd` split can't avoid, previously relied on a comment to keep in
+sync by hand.
+
+### One installer, not two: `_install_common.sh` / `_install_common.cmd`
+
+`install.sh` and `install-copilot.sh` both need to locate a Python 3.11+
+interpreter and build vulnhunter-fix's bundled venv — identical logic,
+independent of which platform's skill is being installed. Rather than
+duplicate that logic in both scripts (as an earlier revision of this port
+did), both source a shared `_install_common.sh` at the repo root; `install.cmd`
+and `install-copilot.cmd` share the equivalent logic the same way, via
+`call "%SCRIPT_DIR%\_install_common.cmd" :label` — cmd.exe's standard
+"batch library" pattern, jumping straight to a label in another file without
+running anything above it. Each script sets `INSTALL_INVOCATION` to its own
+name before sourcing/calling in, so the one error message that names "which
+script to re-run" still names the right one.
+
+This did mean touching `install.sh`/`install.cmd` — Capital One's existing,
+pre-PR installers for the Claude Code skills — for the first time in this
+PR, where every prior commit had been purely additive to the base product.
+The change there is narrow and behavior-preserving: the `find_python`/
+`build_vulnfix_venv` function bodies moved out verbatim into the shared
+file, replaced in-place with a call into it. Existing Claude Code installs
+are unaffected — re-verified end-to-end after the change (fresh install,
+full skill set, bundled venv built and smoke-tested, output identical to
+before).
 
 ## Install
 
@@ -326,7 +351,7 @@ vulnhunt-copilot/
 ├── scripts/
 │   ├── apply_substitutions.py         # install-time text substitutions (see above)
 │   ├── check_overlay_freshness.py     # CI: base-hash drift check for full-file overlays
-│   ├── check_dep_pins_consistent.py   # CI: dep-pin parity across the 4 install scripts
+│   ├── check_dep_pins_consistent.py   # CI: dep-pin parity between the 2 shared install-helper files
 │   ├── overlay_base_hashes.json       # manifest check_overlay_freshness.py verifies against
 │   └── windows/
 │       ├── configure-terminal-profile.ps1  # install: point Copilot's terminal at Git Bash

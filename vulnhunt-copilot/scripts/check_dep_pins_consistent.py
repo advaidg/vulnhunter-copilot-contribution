@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Assert vulnhunter-fix's runtime dependency pins are identical across all
-four install scripts.
+"""Assert vulnhunter-fix's runtime dependency pins are identical across the
+shared install-helper files.
 
-install.sh, install-copilot.sh, install.cmd, and install-copilot.cmd each
-define their own VULNFIX_DEPS (the venv install.sh/install-copilot.sh build
-for vulnhunter-fix bundles jsonschema and graphifyy at a pinned version
-range). Each file's comments say to keep the four in sync by hand -- nothing
-enforced it. This is a case where duplicating a value four times deliberately
-(so the Copilot install scripts don't have to source/import the base
-install scripts) is fine, as long as something catches the four copies
-drifting apart. This is that something -- run in CI on every PR.
+install.sh and install-copilot.sh both source _install_common.sh; install.cmd
+and install-copilot.cmd both call into _install_common.cmd -- both shared
+files define their own VULNFIX_DEPS (the venv the install scripts build for
+vulnhunter-fix bundles jsonschema and graphifyy at a pinned version range).
+Each file's comments say to keep the two in sync by hand -- nothing enforced
+it. This is a case where duplicating a value across a .sh and a .cmd file is
+unavoidable (there's no single syntax both can source), as long as something
+catches the two copies drifting apart. This is that something -- run in CI
+on every PR.
 
 Usage:
     check_dep_pins_consistent.py <repo-root>
@@ -25,10 +26,8 @@ from pathlib import Path
 # byte-for-byte comparison is possible despite the surrounding syntax
 # differing (bash array literal vs. cmd `set` with quoted tokens).
 FILES: dict[str, re.Pattern[str]] = {
-    "install.sh": re.compile(r'^VULNFIX_DEPS=\((.+)\)$', re.MULTILINE),
-    "install-copilot.sh": re.compile(r'^VULNFIX_DEPS=\((.+)\)$', re.MULTILINE),
-    "install.cmd": re.compile(r'^set VULNFIX_DEPS=(.+)$', re.MULTILINE),
-    "install-copilot.cmd": re.compile(r'^set VULNFIX_DEPS=(.+)$', re.MULTILINE),
+    "_install_common.sh": re.compile(r'^VULNFIX_DEPS=\((.+)\)$', re.MULTILINE),
+    "_install_common.cmd": re.compile(r'^set VULNFIX_DEPS=(.+)$', re.MULTILINE),
 }
 
 
@@ -68,20 +67,21 @@ def main() -> int:
     }
     if mismatches:
         print(
-            f"error: vulnhunter-fix dependency pins have drifted apart across "
-            f"install scripts. {reference_file} has {reference_pins!r}; "
-            f"mismatched file(s):",
+            f"error: vulnhunter-fix dependency pins have drifted apart between "
+            f"the shared install-helper files. {reference_file} has "
+            f"{reference_pins!r}; mismatched file(s):",
             file=sys.stderr,
         )
         for relpath, pins in mismatches.items():
             print(f"  {relpath}: {pins!r}", file=sys.stderr)
         print(
-            "Update all four install scripts' VULNFIX_DEPS to match, then re-run.",
+            "Update both _install_common.sh and _install_common.cmd's "
+            "VULNFIX_DEPS to match, then re-run.",
             file=sys.stderr,
         )
         return 1
 
-    print(f"All {len(pins_by_file)} install scripts agree: {reference_pins!r}")
+    print(f"Both shared install-helper files agree: {reference_pins!r}")
     return 0
 
 
